@@ -1,0 +1,131 @@
+name: update-security-data
+
+on:
+  schedule:
+    # 日本時間のAM09:00 (UTCのAM0:00) に実行
+    - cron: '15 23 * * *' 
+  workflow_dispatch:
+
+jobs:
+  # ==============================
+  # ジョブ1: IPAデータベースの更新 (並列)
+  # ==============================
+  update-ipa:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Log Process Start Time
+        run: |
+           echo "処理開始時間 (JST): $(TZ=Asia/Tokyo date)"
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+           python-version: '3.10'
+           cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run script and Output logs
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DB_ID_POST: ${{ secrets.DB_ID_POST }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          echo "=== START update-db script: $(TZ=Asia/Tokyo date) ==="
+          python3 ipa_update.py
+          echo "=== FINISH update-db script: $(TZ=Asia/Tokyo date) ==="
+
+  # ==============================
+  # ジョブ2: NVDデータベースの更新 (並列)
+  # ==============================
+  update-nvd:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log Process Start Time
+        run: |
+           echo "処理開始時間 (JST): $(TZ=Asia/Tokyo date)"
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Dependencies
+        run: pip install requests
+      - name: Run NVD Update and Output logs
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DB_ID_NVD01: ${{ secrets.DB_ID_NVD01 }}
+          DB_ID_NVD02: ${{ secrets.DB_ID_NVD02 }}
+          DB_ID_NVD: ${{ secrets.DB_ID_NVD }}
+        run: |
+          echo "=== START update-nvd script: $(TZ=Asia/Tokyo date) ==="
+          python3 nvd_update.py
+          echo "=== FINISH update-nvd script: $(TZ=Asia/Tokyo date) ==="
+
+  # ==============================
+  # ジョブ3: EPSSデータベースの更新 (並列追加)
+  # ==============================
+  update-epss:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log Process Start Time
+        run: |
+           echo "処理開始時間 (JST): $(TZ=Asia/Tokyo date)"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas boto3
+      - name: Run EPSS Update
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_BUCKET: "data"
+        run: |
+          echo "=== START update-epss script: $(TZ=Asia/Tokyo date) ==="
+          python3 epss_update.py
+          echo "=== FINISH update-epss script: $(TZ=Asia/Tokyo date) ==="
+
+  # ==============================
+  # ジョブ4: KEVデータベースの更新 (並列追加)
+  # ==============================
+  update-kev:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log Process Start Time
+        run: |
+          echo "処理開始時間 (JST): $(TZ=Asia/Tokyo date)"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run KEV Update
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DB_ID_VULNS: ${{ secrets.DB_ID_VULNS }}
+        run: |
+          echo "=== START update-kev script: $(TZ=Asia/Tokyo date) ==="
+          python3 kev_update.py
+          echo "=== FINISH update-kev script: $(TZ=Asia/Tokyo date) ==="
